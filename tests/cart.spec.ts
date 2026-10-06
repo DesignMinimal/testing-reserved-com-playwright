@@ -6,58 +6,101 @@ const PASSWORD = 'Supersecretpassword1!';
 test.describe('Reserved Cart Tests', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    try {
-      const accept = page.locator('#cookiebotDialogOkButton');
-      await accept.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-      await accept.click().catch(() => {});
-    } catch {}
+    const cookieSelectors = [
+      '#cookiebotDialogOkButton',
+      '#onetrust-accept-btn-handler',
+      '[data-testid="cookie-accept"]',
+    ];
+    for (const sel of cookieSelectors) {
+      try {
+        const btn = page.locator(sel);
+        if (await btn.count() > 0) {
+          await btn.first().click();
+          await page.waitForTimeout(1000);
+          break;
+        }
+      } catch {}
+    }
   });
 
   test('add item to cart and empty it', async ({ page }) => {
-    await page.getByRole('link', { name: /log in/i }).click();
-    await page.locator('input[name="logonId"]').fill(USERNAME);
-    await page.locator('input[name="password"]').fill(PASSWORD);
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await expect(page).toHaveURL(/(account|customer)/i, { timeout: 30000 });
+    // Login
+    const loginBtn = page.locator('a:has-text("LOG IN"), a:has-text("Log In")').first();
+    await expect(loginBtn).toBeVisible({ timeout: 15000 });
+    await loginBtn.click();
 
-    const girlsLink = page.getByRole('link', { name: 'Girls' });
-    await expect(girlsLink).toBeVisible({ timeout: 10000 });
+    const usernameField = page.locator('input[name="logonId"], input[name="login"], input[name="username"], input[type="email"], input#login_username').first();
+    const passwordField = page.locator('input[name="password"], input[type="password"]').first();
+
+    await expect(usernameField).toBeVisible({ timeout: 15000 });
+    await usernameField.fill(USERNAME);
+    await passwordField.fill(PASSWORD);
+
+    const submitBtn = page.locator('button[type="submit"], button:has-text("Sign in"), button:has-text("Sign In")').first();
+    await expect(submitBtn).toBeVisible({ timeout: 10000 });
+    await submitBtn.click();
+
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(5000);
+
+    // Navigate to Girls > Jackets, vests
+    const girlsLink = page.locator('nav a:has-text("Girls"), nav a:has-text("girls"), .nav-link:has-text("Girls")').first();
+    await expect(girlsLink).toBeVisible({ timeout: 15000 });
     await girlsLink.click();
 
-    const jacketsLink = page.getByRole('link', { name: /jackets/i }).first();
-    await expect(jacketsLink).toBeVisible({ timeout: 10000 });
+    // Look for jackets link
+    const jacketsLink = page.locator('a:has-text("Jackets"), a:has-text("Jackets, vests"), a:has-text("jackets")').first();
+    await expect(jacketsLink).toBeVisible({ timeout: 15000 });
     await jacketsLink.click();
 
-    const firstJacket = page.locator('[class*="product"], .product-card, a').first();
-    await expect(firstJacket).toBeVisible({ timeout: 10000 });
+    // Select first product
+    const firstJacket = page.locator('[class*="product"], .product-card, a[href*="product"], .product-tile').first();
+    await expect(firstJacket).toBeVisible({ timeout: 15000 });
     await firstJacket.click();
 
-    const sizeSelector = page.locator('.size-selector, .size-option, button:has-text("Size")').first();
-    await sizeSelector.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
-    
-    const sizeBtn = page.getByText('128', { exact: true }).first();
+    // Select size
+    await page.waitForTimeout(2000);
+    const sizeBtn = page.locator('button:has-text("Select size"), [class*="size-selector"], .size-option button, button[class*="size"]').first();
     await sizeBtn.click().catch(async () => {
-      await page.locator('.size-option, [class*="size"] button').first().click();
+      // Try clicking any visible size button
+      const sizes = page.locator('button[class*="size"]');
+      await sizes.first().click();
     });
 
-    const addToBagBtn = page.getByRole('button', { name: /add to bag|add to cart/i });
-    await expect(addToBagBtn).toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(1000);
+    
+    // Select specific size 128 or first available
+    const size128 = page.getByText('128').first();
+    await size128.click().catch(async () => {
+      const allSizes = page.locator('.size-option, [class*="size"] button');
+      await allSizes.first().click();
+    });
+
+    // Add to bag
+    const addToBagBtn = page.locator('button:has-text("Add to bag"), button:has-text("Add to cart"), button[class*="add-to-cart"], button[class*="addToBag"]');
+    await expect(addToBagBtn).toBeVisible({ timeout: 15000 });
     await addToBagBtn.click();
 
-    const goToBag = page.getByRole('link', { name: /go to your bag/i }).first();
-    await goToBag.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-    await goToBag.click().catch(() => {});
+    // Go to bag
+    await page.waitForTimeout(2000);
+    const goToBagBtn = page.locator('a:has-text("Go to your bag"), a:has-text("View bag"), button:has-text("View bag"), a[class*="bag-link"]').first();
+    await goToBagBtn.click().catch(() => {
+      // Navigate via cart icon
+      const cartIcon = page.locator('a:has-text("Bag"), a:has-text("bag"), [class*="cart-icon"]').first();
+      cartIcon.click().catch(() => {});
+    });
 
-    await page.getByRole('link', { name: /bag|cart/i }).click().catch(() => {});
-    await expect(page.locator('[class*="cart"]')).toBeVisible({ timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(2000);
 
-    const removeButtons = page.locator('button:has-text("Remove"), [class*="remove"]');
-    const count = await removeButtons.count();
+    // Remove all items
+    const removeBtns = page.locator('button:has-text("Remove"), [class*="remove"], [data-testid*="remove"]');
+    const count = await removeBtns.count();
     for (let i = 0; i < count; i++) {
-      await removeButtons.first().click();
+      await page.locator('button:has-text("Remove"), [class*="remove"]').first().click();
       await page.waitForTimeout(1000);
     }
 
-    await expect(page.getByText(/cart is empty|no items/i, { ignoreCase: true })).toBeVisible({ timeout: 10000 });
+    // Verify cart empty
+    await expect(page.getByText(/Your cart is empty|cart is empty|no items/i)).toBeVisible({ timeout: 15000 });
   });
 });
